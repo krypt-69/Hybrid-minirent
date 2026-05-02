@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert,
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
-import { db, tenantsCollection, paymentsCollection, propertiesCollection } from '../../lib/firebase';
+import { db, tenantsCollection, paymentsCollection, propertiesCollection, unmatchedPaymentsCollection } from '../../lib/firebase';
 import { collection, getDocs, addDoc, query, where, Timestamp, doc, updateDoc } from 'firebase/firestore';
 
 type Tenant = {
@@ -39,7 +39,7 @@ type RoomCandidate = {
 
 export default function PaymentsScreen() {
   const router = useRouter();
-  const { userId } = useAuth();
+  const { landlordId } = useAuth();   // ✅ use landlordId
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [filteredTenants, setFilteredTenants] = useState<Tenant[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -63,10 +63,10 @@ export default function PaymentsScreen() {
   const [paymentToConfirm, setPaymentToConfirm] = useState<any>(null);
 
   useEffect(() => {
-    if (userId) {
+    if (landlordId) {
       loadData();
     }
-  }, [userId]);
+  }, [landlordId]);
 
   useEffect(() => {
     if (searchQuery) {
@@ -82,10 +82,10 @@ export default function PaymentsScreen() {
   }, [searchQuery, tenants]);
 
   const loadData = async () => {
-    if (!userId) return;
+    if (!landlordId) return;
     try {
       // Load tenants
-      const tenantsQuery = query(tenantsCollection, where('userId', '==', userId));
+      const tenantsQuery = query(tenantsCollection, where('landlordId', '==', landlordId));
       const tenantsSnapshot = await getDocs(tenantsQuery);
       const tenantsList: Tenant[] = [];
       tenantsSnapshot.forEach((doc) => {
@@ -105,7 +105,7 @@ export default function PaymentsScreen() {
       setFilteredTenants(tenantsList);
 
       // Load properties
-      const propertiesQuery = query(propertiesCollection, where('userId', '==', userId));
+      const propertiesQuery = query(propertiesCollection, where('landlordId', '==', landlordId));
       const propertiesSnapshot = await getDocs(propertiesQuery);
       const propertiesList: Property[] = [];
       propertiesSnapshot.forEach((doc) => {
@@ -118,15 +118,12 @@ export default function PaymentsScreen() {
       });
       setProperties(propertiesList);
     } catch (error) {
-      
       Alert.alert('Error', 'Failed to load data');
     }
   };
 
-  // STEP 1: Extract ONLY reliable fields
+  // --- M-Pesa extraction and matching (same as original, but will store landlordId) ---
   const extractReliableFields = (text: string): ExtractedData => {
-    
-    
     const codeMatch = text.match(/^([A-Z0-9]{10,12})\s/);
     const amountMatch = text.match(/(?:Ksh|KES)\s?([\d,]+(?:\.\d{2})?)/i);
     const dateMatch = text.match(/\s(\d{1,2}\/\d{1,2}\/\d{2,4})\s/);
@@ -150,35 +147,25 @@ export default function PaymentsScreen() {
     };
   };
 
-  // STEP 2: Generate room identifier candidates
   const generateRoomCandidates = (accountString: string | null): RoomCandidate[] => {
     if (!accountString) return [];
-    
     const candidates: RoomCandidate[] = [];
-    
     const last2Digits = accountString.match(/(\d{2})$/);
     if (last2Digits) {
       candidates.push({ value: last2Digits[1], description: `Last 2 digits: ${last2Digits[1]}` });
     }
-    
     const last3 = accountString.slice(-3);
     if (last3 && last3 !== last2Digits?.[1]) {
       candidates.push({ value: last3, description: `Last 3 characters: ${last3}` });
     }
-    
     const allDigits = accountString.match(/\d+/g);
     if (allDigits && allDigits[0] !== last2Digits?.[1]) {
       candidates.push({ value: allDigits[0], description: `Full number: ${allDigits[0]}` });
     }
-    
     candidates.push({ value: accountString, description: `Full reference: ${accountString}` });
-    
-    return candidates.filter((c, i, self) => 
-      self.findIndex(t => t.value === c.value) === i
-    );
+    return candidates.filter((c, i, self) => self.findIndex(t => t.value === c.value) === i);
   };
 
-  // STEP 3: Find tenants by room identifier
   const findTenantsByRoomIdentifier = (roomValue: string): Tenant[] => {
     const matched = tenants.filter(tenant => {
       if (tenant.room === roomValue) return true;
@@ -189,7 +176,6 @@ export default function PaymentsScreen() {
       if (tenantDigits === searchDigits && searchDigits.length > 0) return true;
       return false;
     });
-    
     return matched.map(tenant => ({
       ...tenant,
       propertyName: properties.find(p => p.id === tenant.propertyId)?.name,
@@ -201,17 +187,10 @@ export default function PaymentsScreen() {
       Alert.alert('Error', 'Please paste the M-Pesa SMS');
       return;
     }
-    
     const extracted = extractReliableFields(mpesaText);
     setExtractedData(extracted);
-    
-    if (extracted.amount) {
-      setAmount(extracted.amount);
-    }
-    if (extracted.transactionCode) {
-      setMpesaCode(extracted.transactionCode);
-    }
-    
+    if (extracted.amount) setAmount(extracted.amount);
+    if (extracted.transactionCode) setMpesaCode(extracted.transactionCode);
     const candidates = generateRoomCandidates(extracted.fullAccountString);
     setRoomCandidates(candidates);
     setShowCandidatesModal(true);
@@ -220,10 +199,8 @@ export default function PaymentsScreen() {
   const handleSelectRoomCandidate = (candidate: RoomCandidate) => {
     setSelectedRoomValue(candidate.value);
     setShowCandidatesModal(false);
-    
     const matched = findTenantsByRoomIdentifier(candidate.value);
     setMatchedTenants(matched);
-    
     if (matched.length === 0) {
       Alert.alert(
         'No Tenant Found',
@@ -237,7 +214,6 @@ export default function PaymentsScreen() {
       setSelectedTenant(matched[0]);
       showConfirmationDialog(matched[0]);
     } else {
-      // Multiple tenants with same room number across different properties
       setShowPropertySelector(true);
     }
   };
@@ -261,7 +237,6 @@ export default function PaymentsScreen() {
 
   const saveConfirmedPayment = async () => {
     if (!paymentToConfirm) return;
-    
     setIsLoading(true);
     try {
       const { tenant, amount: paymentAmount, transactionCode, newBalance } = paymentToConfirm;
@@ -275,7 +250,9 @@ export default function PaymentsScreen() {
         source: 'mpesa',
         transactionCode: transactionCode || null,
         originalText: mpesaText,
-        userId: userId,
+        landlordId: landlordId,           // ✅ add landlordId
+        propertyId: tenant.propertyId,    // ✅ add propertyId for later filtering
+        recordedBy: 'landlord',
       });
       
       const tenantRef = doc(db, 'tenants', tenant.id);
@@ -285,12 +262,10 @@ export default function PaymentsScreen() {
       });
       
       Alert.alert('Success', `Payment of KES ${paymentAmount.toLocaleString()} recorded for ${tenant.name}\nNew Balance: KES ${newBalance.toLocaleString()}`);
-      
       setConfirmationVisible(false);
       resetForm();
       loadData();
     } catch (error) {
-      
       Alert.alert('Error', 'Failed to save payment');
     } finally {
       setIsLoading(false);
@@ -299,30 +274,27 @@ export default function PaymentsScreen() {
 
   const saveToUnmatched = async () => {
     if (!extractedData || !amount) return;
-    
     setIsLoading(true);
     try {
-      await addDoc(collection(db, 'unmatchedPayments'), {
+      await addDoc(unmatchedPaymentsCollection, {
         originalText: extractedData.rawText,
         amount: parseFloat(amount),
         transactionCode: mpesaCode || null,
         extractedRoom: selectedRoomValue,
         date: Timestamp.now(),
         status: 'pending',
-        userId: userId,
+        landlordId: landlordId,           // ✅ add landlordId
+        // propertyId can be added later if we know it, but for now we leave optional
       });
-      
       Alert.alert('Unmatched Payment Saved', `Payment saved. You can match it later in Unmatched Payments.`);
       resetMpesaFlow();
     } catch (error) {
-      
       Alert.alert('Error', 'Failed to save payment');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Cancel functions for each step
   const cancelMpesaFlow = () => {
     Alert.alert(
       'Cancel Payment',
@@ -382,7 +354,9 @@ export default function PaymentsScreen() {
         amount: paymentAmount,
         date: Timestamp.now(),
         source: 'manual',
-        userId: userId,
+        landlordId: landlordId,           // ✅ add landlordId
+        propertyId: selectedTenant.propertyId,
+        recordedBy: 'landlord',
       });
       
       const tenantRef = doc(db, 'tenants', selectedTenant.id);
@@ -395,7 +369,6 @@ export default function PaymentsScreen() {
       resetManualForm();
       loadData();
     } catch (error) {
-      
       Alert.alert('Error', 'Failed to record payment');
     } finally {
       setIsLoading(false);

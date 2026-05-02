@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Modal, TextI
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
-import { db, unmatchedPaymentsCollection, tenantsCollection } from '../lib/firebase';
+import { db, unmatchedPaymentsCollection, tenantsCollection, paymentsCollection } from '../lib/firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, addDoc, Timestamp, query, where } from 'firebase/firestore';
 
 type UnmatchedPayment = {
@@ -23,11 +23,12 @@ type Tenant = {
   phone: string;
   balance?: number;
   status?: string;
+  propertyId: string;  // we need this to set propertyId when matching
 };
 
 export default function UnmatchedPaymentsScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { landlordId } = useAuth();   // ✅ use landlordId
   const [unmatched, setUnmatched] = useState<UnmatchedPayment[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,22 +39,18 @@ export default function UnmatchedPaymentsScreen() {
   const [isMatching, setIsMatching] = useState(false);
 
   useEffect(() => {
-    if (user) {
+    if (landlordId) {
       loadData();
     }
-  }, [user]);
+  }, [landlordId]);
 
   const loadData = async () => {
-    if (!user) return;
+    if (!landlordId) return;
     
     try {
-      console.log('Loading unmatched payments for user:', user.uid);
-      
-      // Load unmatched payments for this user
-      const q = query(unmatchedPaymentsCollection, where('userId', '==', user.uid));
+      // Load unmatched payments for this landlord
+      const q = query(unmatchedPaymentsCollection, where('landlordId', '==', landlordId));
       const unmatchedSnapshot = await getDocs(q);
-      console.log('Found', unmatchedSnapshot.size, 'unmatched payments');
-      
       const unmatchedList: UnmatchedPayment[] = [];
       unmatchedSnapshot.forEach((doc) => {
         const data = doc.data();
@@ -70,11 +67,9 @@ export default function UnmatchedPaymentsScreen() {
       });
       setUnmatched(unmatchedList.sort((a, b) => b.date.getTime() - a.date.getTime()));
 
-      // Load tenants for this user
-      const tenantsQuery = query(tenantsCollection, where('userId', '==', user.uid));
+      // Load tenants for this landlord
+      const tenantsQuery = query(tenantsCollection, where('landlordId', '==', landlordId));
       const tenantsSnapshot = await getDocs(tenantsQuery);
-      console.log('Found', tenantsSnapshot.size, 'tenants');
-      
       const tenantsList: Tenant[] = [];
       tenantsSnapshot.forEach((doc) => {
         const data = doc.data();
@@ -85,6 +80,7 @@ export default function UnmatchedPaymentsScreen() {
           phone: data.phone,
           balance: data.balance || 0,
           status: data.status || 'active',
+          propertyId: data.propertyId,
         });
       });
       setTenants(tenantsList);
@@ -98,32 +94,24 @@ export default function UnmatchedPaymentsScreen() {
   };
 
   const onRefresh = useCallback(() => {
-    if (!user) return;
+    if (!landlordId) return;
     setRefreshing(true);
     loadData();
-  }, [user]);
+  }, [landlordId]);
 
   const handleMatchPayment = async () => {
     if (isMatching) return;
-    
     if (!selectedPayment || !selectedTenant) {
       Alert.alert('Error', 'Please select a tenant');
       return;
     }
-
-    if (!user) {
+    if (!landlordId) {
       Alert.alert('Error', 'User not authenticated');
       return;
     }
 
     setIsMatching(true);
-    
     try {
-      console.log('1. Starting match payment...');
-      console.log('Payment ID:', selectedPayment.id);
-      console.log('Tenant ID:', selectedTenant.id);
-      console.log('Amount:', selectedPayment.amount);
-      
       // Step 1: Record payment to payments collection
       const paymentData: any = {
         tenantId: selectedTenant.id,
@@ -134,46 +122,32 @@ export default function UnmatchedPaymentsScreen() {
         source: 'mpesa',
         originalText: selectedPayment.originalText,
         matchedFromUnmatched: true,
-        userId: user.uid,
+        landlordId: landlordId,               // ✅ add landlordId
+        propertyId: selectedTenant.propertyId, // ✅ add propertyId
+        recordedBy: 'landlord',
         createdAt: Timestamp.now(),
       };
-      
       if (selectedPayment.transactionCode) {
         paymentData.transactionCode = selectedPayment.transactionCode;
       }
-      
-      console.log('2. Saving payment:', paymentData);
-      const paymentRef = await addDoc(collection(db, 'payments'), paymentData);
-      console.log('3. Payment saved with ID:', paymentRef.id);
+      await addDoc(paymentsCollection, paymentData);
 
       // Step 2: Update tenant balance
       const tenantRef = doc(db, 'tenants', selectedTenant.id);
       const newBalance = (selectedTenant.balance || 0) - selectedPayment.amount;
-      console.log('4. Updating tenant balance from', selectedTenant.balance, 'to', newBalance);
-      
       await updateDoc(tenantRef, {
         balance: newBalance,
         lastPaymentDate: Timestamp.now(),
       });
-      console.log('5. Tenant balance updated');
 
       // Step 3: Delete from unmatched
-      const unmatchedRef = doc(db, 'unmatchedPayments', selectedPayment.id);
-      console.log('6. Deleting unmatched payment:', selectedPayment.id);
-      
-      await deleteDoc(unmatchedRef);
-      console.log('7. Unmatched payment deleted successfully');
+      await deleteDoc(doc(db, 'unmatchedPayments', selectedPayment.id));
 
       Alert.alert('Success', `Payment of KES ${selectedPayment.amount.toLocaleString()} matched to ${selectedTenant.name}`);
-      
-      // Close modal and refresh
       setModalVisible(false);
       setSelectedPayment(null);
       setSelectedTenant(null);
-      
-      // Refresh the list
       await loadData();
-      
     } catch (error) {
       console.error('Error matching payment:', error);
       Alert.alert('Error', 'Failed to match payment: ' + error.message);

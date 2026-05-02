@@ -4,41 +4,38 @@ import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 import { getStorage } from 'firebase/storage';
 
+// NEW Firebase configuration for the new account
 const firebaseConfig = {
-  apiKey: "AIzaSyC1jW_Nk7Yteb4ieVnRfVtnEYWLhfmaFSY",
-  authDomain: "minirent-97965.firebaseapp.com",
-  projectId: "minirent-97965",
-  storageBucket: "minirent-97965.firebasestorage.app",
-  messagingSenderId: "61756153883",
-  appId: "1:61756153883:web:3c47a523673b85aa8858be",
-  measurementId: "G-20FQ3MZGYN"
+  apiKey: "AIzaSyB9oJujZRT3TCVFeinr-VuQsA6YmJoEOzk",
+  authDomain: "minirent-landlord.firebaseapp.com",
+  projectId: "minirent-landlord",
+  storageBucket: "minirent-landlord.firebasestorage.app",
+  messagingSenderId: "853147470002",
+  appId: "1:853147470002:web:5caf8b46d4f635576e21ab",
+  measurementId: "G-N185W1VQ4Y"
 };
 
-// Initialize Firebase only if it hasn't been initialized already
+// Initialize Firebase only once
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Auth with persistence for React Native
+// Initialize Auth with React Native persistence
 const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(ReactNativeAsyncStorage)
 });
 
-// Initialize other services
+// Firestore and Storage
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-// Collection references
+// Collection references (same names as before)
 export const tenantsCollection = collection(db, 'tenants');
 export const propertiesCollection = collection(db, 'properties');
 export const paymentsCollection = collection(db, 'payments');
 export const complaintsCollection = collection(db, 'complaints');
 export const unmatchedPaymentsCollection = collection(db, 'unmatchedPayments');
 
-// Helper function to get tenant document by phone
-export const getTenantByPhone = (phone: string) => {
-  return doc(db, 'tenants', phone);
-};
+// Helper (optional)
+export const getTenantByPhone = (phone: string) => doc(db, 'tenants', phone);
 
-// Export auth separately
 export { auth };
-
 export default app;

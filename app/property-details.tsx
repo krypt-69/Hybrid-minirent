@@ -10,7 +10,7 @@ type Property = {
   name: string;
   code: string;
   location?: string;
-  userId: string;
+  landlordId: string;
   createdAt: string;
 };
 
@@ -28,26 +28,26 @@ type Tenant = {
 export default function PropertyDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { user } = useAuth();
+  const { landlordId } = useAuth();   // ✅ use landlordId
   const [property, setProperty] = useState<Property | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (id && user) {
+    if (id && landlordId) {
       loadData();
     }
-  }, [id, user]);
+  }, [id, landlordId]);
 
   const loadData = async () => {
-    if (!user) return;
+    if (!landlordId) return;
     
     try {
       // Load property details
       const propertyDoc = await getDoc(doc(db, 'properties', id as string));
       if (propertyDoc.exists()) {
         const data = propertyDoc.data();
-        if (data.userId !== user.uid) {
+        if (data.landlordId !== landlordId) {
           Alert.alert('Error', 'You do not have permission to view this property');
           router.back();
           return;
@@ -57,7 +57,7 @@ export default function PropertyDetailsScreen() {
           name: data.name,
           code: data.code,
           location: data.location,
-          userId: data.userId,
+          landlordId: data.landlordId,
           createdAt: data.createdAt,
         });
       } else {
@@ -66,11 +66,11 @@ export default function PropertyDetailsScreen() {
         return;
       }
 
-      // Load tenants for this property
+      // Load tenants for this property (they already have landlordId filter, but we need propertyId)
       const tenantsQuery = query(
         tenantsCollection,
         where('propertyId', '==', id),
-        where('userId', '==', user.uid)
+        where('landlordId', '==', landlordId)
       );
       const tenantsSnapshot = await getDocs(tenantsQuery);
       const tenantsList: Tenant[] = [];
@@ -241,6 +241,8 @@ export default function PropertyDetailsScreen() {
     </ScrollView>
   );
 }
+
+// Styles remain unchanged – copy from your original property-details.tsx.
 
 const styles = StyleSheet.create({
   container: {

@@ -2,33 +2,33 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { db, propertiesCollection } from '../../lib/firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
-//const { userId } = useAuth(); // Get current user ID
+
 type Property = {
   id: string;
   name: string;
   code: string;
   location?: string;
-  userId: string;
+  landlordId: string;      // changed from userId
 };
 
 export default function PropertiesScreen() {
   const router = useRouter();
-  const { userId } = useAuth();
+  const { landlordId } = useAuth();   // ✅ use landlordId instead of userId
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (userId) {
+    if (landlordId) {
       loadProperties();
     }
-  }, [userId]);
+  }, [landlordId]);
 
   const loadProperties = async () => {
-    if (!userId) return;
+    if (!landlordId) return;
     try {
-      const q = query(propertiesCollection, where('userId', '==', userId));
+      const q = query(propertiesCollection, where('landlordId', '==', landlordId));
       const querySnapshot = await getDocs(q);
       const propertiesList: Property[] = [];
       querySnapshot.forEach((doc) => {
@@ -119,97 +119,23 @@ export default function PropertiesScreen() {
   );
 }
 
+// (styles remain exactly as you had them – copy from your original file)
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  addButton: {
-    backgroundColor: '#27ae60',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  list: {
-    padding: 15,
-  },
-  propertyCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  propertyInfo: {
-    flex: 1,
-  },
-  propertyName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  propertyCode: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginTop: 4,
-  },
-  propertyLocation: {
-    fontSize: 12,
-    color: '#95a5a6',
-    marginTop: 2,
-  },
-  deleteButton: {
-    padding: 8,
-  },
-  deleteText: {
-    color: '#e74c3c',
-    fontSize: 14,
-  },
-  loading: {
-    textAlign: 'center',
-    marginTop: 50,
-    color: '#95a5a6',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#95a5a6',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#bdc3c7',
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#2c3e50' },
+  addButton: { backgroundColor: '#27ae60', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
+  addButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
+  list: { padding: 15 },
+  propertyCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+  propertyInfo: { flex: 1 },
+  propertyName: { fontSize: 18, fontWeight: '600', color: '#2c3e50' },
+  propertyCode: { fontSize: 14, color: '#7f8c8d', marginTop: 4 },
+  propertyLocation: { fontSize: 12, color: '#95a5a6', marginTop: 2 },
+  deleteButton: { padding: 8 },
+  deleteText: { color: '#e74c3c', fontSize: 14 },
+  loading: { textAlign: 'center', marginTop: 50, color: '#95a5a6' },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  emptyText: { fontSize: 18, color: '#95a5a6', marginBottom: 8 },
+  emptySubtext: { fontSize: 14, color: '#bdc3c7', textAlign: 'center' },
 });

@@ -9,7 +9,7 @@ type Property = {
   id: string;
   name: string;
   code: string;
-  userId?: string;
+  landlordId?: string;
 };
 
 type Tenant = {
@@ -23,14 +23,14 @@ type Tenant = {
   monthlyRent: number;
   balance: number;
   status: string;
-  userId?: string;
+  landlordId?: string;
 };
 
 type FilterType = 'all' | 'unpaid' | 'partial' | 'paid';
 
 export default function ArrearsScreen() {
   const router = useRouter();
-  const { userId } = useAuth();
+  const { landlordId } = useAuth();   // ✅ use landlordId
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [filteredTenants, setFilteredTenants] = useState<Tenant[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -41,20 +41,18 @@ export default function ArrearsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (userId) {
-      loadData();
-    }
-  }, [userId]);
+    if (landlordId) loadData();
+  }, [landlordId]);
 
   useEffect(() => {
     applyFilters();
   }, [selectedProperty, filterType, searchQuery, tenants]);
 
   const loadData = async () => {
-    if (!userId) return;
+    if (!landlordId) return;
     try {
-      // Load properties for this user
-      const propertiesQuery = query(propertiesCollection, where('userId', '==', userId));
+      // Load properties for this landlord
+      const propertiesQuery = query(propertiesCollection, where('landlordId', '==', landlordId));
       const propertiesSnapshot = await getDocs(propertiesQuery);
       const propertiesList: Property[] = [];
       propertiesSnapshot.forEach((doc) => {
@@ -62,8 +60,8 @@ export default function ArrearsScreen() {
       });
       setProperties(propertiesList);
 
-      // Load tenants for this user
-      const tenantsQuery = query(tenantsCollection, where('userId', '==', userId));
+      // Load tenants for this landlord
+      const tenantsQuery = query(tenantsCollection, where('landlordId', '==', landlordId));
       const tenantsSnapshot = await getDocs(tenantsQuery);
       const tenantsList: Tenant[] = [];
       tenantsSnapshot.forEach((doc) => {
@@ -95,12 +93,10 @@ export default function ArrearsScreen() {
   const applyFilters = () => {
     let filtered = [...tenants];
 
-    // Filter by property
     if (selectedProperty !== 'all') {
       filtered = filtered.filter(t => t.propertyId === selectedProperty);
     }
 
-    // Filter by balance status
     if (filterType === 'unpaid') {
       filtered = filtered.filter(t => t.balance > 0 && t.balance >= t.monthlyRent);
     } else if (filterType === 'partial') {
@@ -109,7 +105,6 @@ export default function ArrearsScreen() {
       filtered = filtered.filter(t => t.balance <= 0);
     }
 
-    // Search filter
     if (searchQuery) {
       filtered = filtered.filter(t => 
         t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -118,17 +113,15 @@ export default function ArrearsScreen() {
       );
     }
 
-    // Sort by balance (highest first)
     filtered.sort((a, b) => b.balance - a.balance);
-
     setFilteredTenants(filtered);
   };
 
   const onRefresh = useCallback(() => {
-    if (!userId) return;
+    if (!landlordId) return;
     setRefreshing(true);
     loadData();
-  }, [userId]);
+  }, [landlordId]);
 
   const getBalanceStatus = (balance: number, monthlyRent: number) => {
     if (balance <= 0) return 'paid';
@@ -154,21 +147,15 @@ export default function ArrearsScreen() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return `KES ${amount.toLocaleString()}`;
-  };
+  const formatCurrency = (amount: number) => `KES ${amount.toLocaleString()}`;
 
   const handleRecordPayment = (tenant: Tenant) => {
-    router.push({
-      pathname: '/(tabs)/payments',
-      params: { tenantId: tenant.id }
-    });
+    router.push({ pathname: '/(tabs)/payments', params: { tenantId: tenant.id } });
   };
 
   const renderTenantItem = ({ item }: { item: Tenant }) => {
     const status = getBalanceStatus(item.balance, item.monthlyRent);
     const statusColor = getStatusColor(status);
-    
     return (
       <TouchableOpacity 
         style={styles.tenantCard}
@@ -180,11 +167,9 @@ export default function ArrearsScreen() {
             <Text style={styles.statusText}>{getStatusText(status)}</Text>
           </View>
         </View>
-        
         <Text style={styles.tenantDetails}>
           {item.propertyName} • Room {item.room} ({item.roomCode})
         </Text>
-        
         <View style={styles.balanceContainer}>
           <View>
             <Text style={styles.rentLabel}>Monthly Rent</Text>
@@ -197,24 +182,15 @@ export default function ArrearsScreen() {
             </Text>
           </View>
         </View>
-        
-        <TouchableOpacity 
-          style={styles.payButton}
-          onPress={() => handleRecordPayment(item)}
-        >
+        <TouchableOpacity style={styles.payButton} onPress={() => handleRecordPayment(item)}>
           <Text style={styles.payButtonText}>Record Payment</Text>
         </TouchableOpacity>
       </TouchableOpacity>
     );
   };
 
-  const getTotalArrears = () => {
-    return filteredTenants.reduce((sum, t) => sum + (t.balance > 0 ? t.balance : 0), 0);
-  };
-
-  const getUnpaidCount = () => {
-    return filteredTenants.filter(t => t.balance > 0).length;
-  };
+  const getTotalArrears = () => filteredTenants.reduce((sum, t) => sum + (t.balance > 0 ? t.balance : 0), 0);
+  const getUnpaidCount = () => filteredTenants.filter(t => t.balance > 0).length;
 
   return (
     <View style={styles.container}>
@@ -223,10 +199,10 @@ export default function ArrearsScreen() {
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Arrears Dashboard</Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: 30 }} />
       </View>
 
-      {/* Stats Summary */}
+      {/* Stats Summary - reduced size */}
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
           <Text style={styles.statNumber}>{filteredTenants.length}</Text>
@@ -242,9 +218,8 @@ export default function ArrearsScreen() {
         </View>
       </View>
 
-      {/* Filters */}
+      {/* Filters - reduced padding */}
       <View style={styles.filtersContainer}>
-        {/* Property Filter */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
           <TouchableOpacity 
             style={[styles.filterChip, selectedProperty === 'all' && styles.activeFilter]}
@@ -263,35 +238,21 @@ export default function ArrearsScreen() {
           ))}
         </ScrollView>
 
-        {/* Status Filter */}
         <View style={styles.statusFilter}>
-          <TouchableOpacity 
-            style={[styles.statusChip, filterType === 'all' && styles.activeStatusChip]}
-            onPress={() => setFilterType('all')}
-          >
+          <TouchableOpacity style={[styles.statusChip, filterType === 'all' && styles.activeStatusChip]} onPress={() => setFilterType('all')}>
             <Text style={[styles.statusChipText, filterType === 'all' && styles.activeStatusText]}>All</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.statusChip, filterType === 'unpaid' && styles.activeStatusChip]}
-            onPress={() => setFilterType('unpaid')}
-          >
+          <TouchableOpacity style={[styles.statusChip, filterType === 'unpaid' && styles.activeStatusChip]} onPress={() => setFilterType('unpaid')}>
             <Text style={[styles.statusChipText, filterType === 'unpaid' && styles.activeStatusText]}>Unpaid</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.statusChip, filterType === 'partial' && styles.activeStatusChip]}
-            onPress={() => setFilterType('partial')}
-          >
+          <TouchableOpacity style={[styles.statusChip, filterType === 'partial' && styles.activeStatusChip]} onPress={() => setFilterType('partial')}>
             <Text style={[styles.statusChipText, filterType === 'partial' && styles.activeStatusText]}>Partial</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.statusChip, filterType === 'paid' && styles.activeStatusChip]}
-            onPress={() => setFilterType('paid')}
-          >
+          <TouchableOpacity style={[styles.statusChip, filterType === 'paid' && styles.activeStatusChip]} onPress={() => setFilterType('paid')}>
             <Text style={[styles.statusChipText, filterType === 'paid' && styles.activeStatusText]}>Paid</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Search */}
         <TextInput
           style={styles.searchInput}
           placeholder="Search by name, room code, or phone..."
@@ -300,15 +261,12 @@ export default function ArrearsScreen() {
         />
       </View>
 
-      {/* Tenants List */}
       <FlatList
         data={filteredTenants}
         renderItem={renderTenantItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No tenants found</Text>
@@ -322,215 +280,47 @@ export default function ArrearsScreen() {
   );
 }
 
+// ✅ Reduced styles: smaller padding, margins, font sizes
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  backButton: {
-    padding: 5,
-  },
-  backText: {
-    fontSize: 16,
-    color: '#27ae60',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    padding: 15,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  statWarning: {
-    backgroundColor: '#fff3e0',
-  },
-  statDanger: {
-    backgroundColor: '#ffe5e5',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#7f8c8d',
-    marginTop: 4,
-  },
-  filtersContainer: {
-    backgroundColor: 'white',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  filterScroll: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
-    marginRight: 10,
-  },
-  activeFilter: {
-    backgroundColor: '#27ae60',
-  },
-  filterText: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  activeFilterText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  statusFilter: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  statusChip: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
-    marginHorizontal: 4,
-  },
-  activeStatusChip: {
-    backgroundColor: '#27ae60',
-  },
-  statusChipText: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  activeStatusText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 14,
-  },
-  list: {
-    padding: 15,
-  },
-  tenantCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  tenantHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  tenantName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 11,
-    color: 'white',
-    fontWeight: '600',
-  },
-  tenantDetails: {
-    fontSize: 13,
-    color: '#7f8c8d',
-    marginBottom: 12,
-  },
-  balanceContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  rentLabel: {
-    fontSize: 11,
-    color: '#95a5a6',
-  },
-  rentAmount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  balanceRight: {
-    alignItems: 'flex-end',
-  },
-  balanceLabel: {
-    fontSize: 11,
-    color: '#95a5a6',
-  },
-  balanceAmount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  payButton: {
-    backgroundColor: '#27ae60',
-    padding: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  payButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    padding: 50,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#95a5a6',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#bdc3c7',
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  backButton: { padding: 4 },
+  backText: { fontSize: 14, color: '#27ae60' },
+  title: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50' },
+  statsContainer: { flexDirection: 'row', padding: 10, gap: 8 },
+  statCard: { flex: 1, backgroundColor: 'white', borderRadius: 10, padding: 8, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+  statWarning: { backgroundColor: '#fff3e0' },
+  statDanger: { backgroundColor: '#ffe5e5' },
+  statNumber: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50' },
+  statLabel: { fontSize: 10, color: '#7f8c8d', marginTop: 3 },
+  filtersContainer: { backgroundColor: 'white', padding: 10, borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  filterScroll: { flexDirection: 'row', marginBottom: 8 },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#f0f0f0', marginRight: 8 },
+  activeFilter: { backgroundColor: '#27ae60' },
+  filterText: { fontSize: 12, color: '#7f8c8d' },
+  activeFilterText: { color: 'white', fontWeight: '600' },
+  statusFilter: { flexDirection: 'row', marginBottom: 10, gap: 6 },
+  statusChip: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: 6, backgroundColor: '#f0f0f0', marginHorizontal: 2 },
+  activeStatusChip: { backgroundColor: '#27ae60' },
+  statusChipText: { fontSize: 12, color: '#7f8c8d' },
+  activeStatusText: { color: 'white', fontWeight: '600' },
+  searchInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 6, padding: 8, fontSize: 13 },
+  list: { padding: 10 },
+  tenantCard: { backgroundColor: 'white', borderRadius: 10, padding: 12, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+  tenantHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  tenantName: { fontSize: 16, fontWeight: '600', color: '#2c3e50' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  statusText: { fontSize: 10, color: 'white', fontWeight: '600' },
+  tenantDetails: { fontSize: 12, color: '#7f8c8d', marginBottom: 10 },
+  balanceContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
+  rentLabel: { fontSize: 10, color: '#95a5a6' },
+  rentAmount: { fontSize: 14, fontWeight: '600', color: '#2c3e50' },
+  balanceRight: { alignItems: 'flex-end' },
+  balanceLabel: { fontSize: 10, color: '#95a5a6' },
+  balanceAmount: { fontSize: 16, fontWeight: 'bold' },
+  payButton: { backgroundColor: '#27ae60', padding: 8, borderRadius: 6, alignItems: 'center', marginTop: 6 },
+  payButtonText: { color: 'white', fontSize: 13, fontWeight: '600' },
+  emptyContainer: { alignItems: 'center', padding: 40 },
+  emptyText: { fontSize: 14, color: '#95a5a6', marginBottom: 6 },
+  emptySubtext: { fontSize: 12, color: '#bdc3c7', textAlign: 'center' },
 });

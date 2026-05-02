@@ -22,10 +22,11 @@ type Tenant = {
   monthlyRent: number;
   balance: number;
   status: 'active' | 'inactive';
+  landlordId: string;   // ✅ added
 };
 
 export default function TenantsScreen() {
-  const { user } = useAuth();
+  const { landlordId } = useAuth();   // ✅ use landlordId
   const router = useRouter();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -39,60 +40,44 @@ export default function TenantsScreen() {
   const [showPropertySelector, setShowPropertySelector] = useState(false);
 
   useEffect(() => {
-  if (user) {
-    loadData();
-  }
-}, [user]);
+    if (landlordId) {
+      loadData();
+    }
+  }, [landlordId]);
 
   const loadData = async () => {
-  if (!user) return;
-
-  try {
-    // ✅ Load only YOUR properties
-    const propertiesQuery = query(
-      propertiesCollection,
-      where('userId', '==', user.uid)
-    );
-
-    const propertiesSnapshot = await getDocs(propertiesQuery);
-
-    const propertiesList: Property[] = [];
-    propertiesSnapshot.forEach((doc) => {
-      propertiesList.push({ id: doc.id, ...doc.data() } as Property);
-    });
-
-    setProperties(propertiesList);
-
-    // ✅ Load only YOUR tenants
-    const tenantsQuery = query(
-      tenantsCollection,
-      where('userId', '==', user.uid)
-    );
-
-    const tenantsSnapshot = await getDocs(tenantsQuery);
-
-    const tenantsList: Tenant[] = [];
-    tenantsSnapshot.forEach((doc) => {
-      const tenant = doc.data() as Tenant;
-
-      const property = propertiesList.find(p => p.id === tenant.propertyId);
-
-      tenantsList.push({
-        ...tenant,
-        id: doc.id,
-        propertyName: property?.name
+    if (!landlordId) return;
+    try {
+      // Load only landlord's properties
+      const propertiesQuery = query(propertiesCollection, where('landlordId', '==', landlordId));
+      const propertiesSnapshot = await getDocs(propertiesQuery);
+      const propertiesList: Property[] = [];
+      propertiesSnapshot.forEach((doc) => {
+        propertiesList.push({ id: doc.id, ...doc.data() } as Property);
       });
-    });
+      setProperties(propertiesList);
 
-    setTenants(tenantsList);
-
-  } catch (error) {
-    console.error('Error loading data:', error);
-    Alert.alert('Error', 'Failed to load data');
-  } finally {
-    setIsLoading(false);
-  }
-};
+      // Load only landlord's tenants
+      const tenantsQuery = query(tenantsCollection, where('landlordId', '==', landlordId));
+      const tenantsSnapshot = await getDocs(tenantsQuery);
+      const tenantsList: Tenant[] = [];
+      tenantsSnapshot.forEach((doc) => {
+        const tenant = doc.data() as Tenant;
+        const property = propertiesList.find(p => p.id === tenant.propertyId);
+        tenantsList.push({
+          ...tenant,
+          id: doc.id,
+          propertyName: property?.name,
+        });
+      });
+      setTenants(tenantsList);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      Alert.alert('Error', 'Failed to load data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleAddTenant = async () => {
     if (!selectedProperty) {
@@ -121,7 +106,7 @@ export default function TenantsScreen() {
 
     try {
       await addDoc(tenantsCollection, {
-        userId: user?.uid,
+        landlordId: landlordId,   // ✅ changed from userId
         name: tenantName.trim(),
         phone: tenantPhone.trim(),
         propertyId: selectedProperty,
@@ -175,29 +160,29 @@ export default function TenantsScreen() {
   };
 
   const renderTenant = ({ item }: { item: Tenant }) => (
-  <TouchableOpacity 
-    style={styles.tenantCard}
-    onPress={() => router.push(`/tenant-details?id=${item.id}`)}
-  >
-    <View style={styles.tenantInfo}>
-      <Text style={styles.tenantName}>{item.name}</Text>
-      <Text style={styles.tenantDetails}>
-        {item.propertyName} • Room {item.room}
-      </Text>
-      <Text style={styles.roomCode}>Code: {item.roomCode}</Text>
-      <Text style={styles.rent}>Rent: KES {item.monthlyRent.toLocaleString()}</Text>
-      <Text style={[styles.balance, item.balance > 0 ? styles.balanceDue : styles.balancePaid]}>
-        Balance: KES {item.balance.toLocaleString()}
-      </Text>
-    </View>
     <TouchableOpacity 
-      onPress={() => handleDeleteTenant(item.id, item.name)}
-      style={styles.deleteButton}
+      style={styles.tenantCard}
+      onPress={() => router.push(`/tenant-details?id=${item.id}`)}
     >
-      <Text style={styles.deleteText}>Delete</Text>
+      <View style={styles.tenantInfo}>
+        <Text style={styles.tenantName}>{item.name}</Text>
+        <Text style={styles.tenantDetails}>
+          {item.propertyName} • Room {item.room}
+        </Text>
+        <Text style={styles.roomCode}>Code: {item.roomCode}</Text>
+        <Text style={styles.rent}>Rent: KES {item.monthlyRent.toLocaleString()}</Text>
+        <Text style={[styles.balance, item.balance > 0 ? styles.balanceDue : styles.balancePaid]}>
+          Balance: KES {item.balance.toLocaleString()}
+        </Text>
+      </View>
+      <TouchableOpacity 
+        onPress={() => handleDeleteTenant(item.id, item.name)}
+        style={styles.deleteButton}
+      >
+        <Text style={styles.deleteText}>Delete</Text>
+      </TouchableOpacity>
     </TouchableOpacity>
-  </TouchableOpacity>
-);
+  );
 
   const PropertySelectorModal = () => (
     <Modal
@@ -333,196 +318,43 @@ export default function TenantsScreen() {
   );
 }
 
+// styles exactly as you had them (copy from your original file)
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  addButton: {
-    backgroundColor: '#27ae60',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  list: {
-    padding: 15,
-  },
-  tenantCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  tenantInfo: {
-    flex: 1,
-  },
-  tenantName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  tenantDetails: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginTop: 4,
-  },
-  roomCode: {
-    fontSize: 12,
-    color: '#3498db',
-    marginTop: 2,
-    fontFamily: 'monospace',
-  },
-  rent: {
-    fontSize: 14,
-    color: '#2c3e50',
-    marginTop: 4,
-  },
-  balance: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  balanceDue: {
-    color: '#e74c3c',
-  },
-  balancePaid: {
-    color: '#27ae60',
-  },
-  deleteButton: {
-    padding: 8,
-  },
-  deleteText: {
-    color: '#e74c3c',
-    fontSize: 14,
-  },
-  loading: {
-    textAlign: 'center',
-    marginTop: 50,
-    color: '#95a5a6',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#95a5a6',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#bdc3c7',
-    textAlign: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    width: '90%',
-    maxHeight: '80%',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 16,
-  },
-  selectorButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    backgroundColor: '#fff',
-  },
-  selectorText: {
-    fontSize: 16,
-    color: '#2c3e50',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  modalButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginHorizontal: 5,
-  },
-  cancelModalButton: {
-    backgroundColor: '#e74c3c',
-  },
-  saveModalButton: {
-    backgroundColor: '#27ae60',
-  },
-  cancelModalButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  saveModalButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  propertyOption: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  propertyOptionText: {
-    fontSize: 16,
-  },
-  cancelButton: {
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  cancelButtonText: {
-    color: '#e74c3c',
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#2c3e50' },
+  addButton: { backgroundColor: '#27ae60', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
+  addButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
+  list: { padding: 15 },
+  tenantCard: { backgroundColor: 'white', borderRadius: 12, padding: 15, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+  tenantInfo: { flex: 1 },
+  tenantName: { fontSize: 18, fontWeight: '600', color: '#2c3e50' },
+  tenantDetails: { fontSize: 14, color: '#7f8c8d', marginTop: 4 },
+  roomCode: { fontSize: 12, color: '#3498db', marginTop: 2, fontFamily: 'monospace' },
+  rent: { fontSize: 14, color: '#2c3e50', marginTop: 4 },
+  balance: { fontSize: 14, fontWeight: '600', marginTop: 4 },
+  balanceDue: { color: '#e74c3c' },
+  balancePaid: { color: '#27ae60' },
+  deleteButton: { padding: 8 },
+  deleteText: { color: '#e74c3c', fontSize: 14 },
+  loading: { textAlign: 'center', marginTop: 50, color: '#95a5a6' },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  emptyText: { fontSize: 18, color: '#95a5a6', marginBottom: 8 },
+  emptySubtext: { fontSize: 14, color: '#bdc3c7', textAlign: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { backgroundColor: 'white', borderRadius: 12, padding: 20, width: '90%', maxHeight: '80%' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 16 },
+  selectorButton: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 12, backgroundColor: '#fff' },
+  selectorText: { fontSize: 16, color: '#2c3e50' },
+  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  modalButton: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', marginHorizontal: 5 },
+  cancelModalButton: { backgroundColor: '#e74c3c' },
+  saveModalButton: { backgroundColor: '#27ae60' },
+  cancelModalButtonText: { color: 'white', fontWeight: '600' },
+  saveModalButtonText: { color: 'white', fontWeight: '600' },
+  propertyOption: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  propertyOptionText: { fontSize: 16 },
+  cancelButton: { padding: 15, alignItems: 'center', marginTop: 10 },
+  cancelButtonText: { color: '#e74c3c', fontWeight: '600' },
 });

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { db, tenantsCollection, paymentsCollection } from '../lib/firebase';
-import { doc, getDoc, updateDoc, collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 
 type Tenant = {
   id: string;
@@ -17,7 +17,7 @@ type Tenant = {
   balance: number;
   status: string;
   createdAt: string;
-  userId?: string;
+  landlordId?: string;
 };
 
 type Payment = {
@@ -26,13 +26,12 @@ type Payment = {
   date: Date;
   source: string;
   transactionCode?: string;
-  userId?: string;
 };
 
 export default function TenantDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { userId } = useAuth();
+  const { landlordId } = useAuth();   // ✅ use landlordId
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,21 +42,21 @@ export default function TenantDetailsScreen() {
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
-    if (id && userId) {
+    if (id && landlordId) {
       loadTenantDetails();
     }
-  }, [id, userId]);
+  }, [id, landlordId]);
 
   const loadTenantDetails = async () => {
-    if (!userId) return;
+    if (!landlordId) return;
     try {
-      // Load tenant details - verify it belongs to this user
+      // Load tenant details - verify it belongs to this landlord
       const tenantDoc = await getDoc(doc(db, 'tenants', id as string));
       if (tenantDoc.exists()) {
         const data = tenantDoc.data();
         
         // Security check: ensure tenant belongs to current landlord
-        if (data.userId !== userId) {
+        if (data.landlordId !== landlordId) {
           Alert.alert('Error', 'You do not have permission to view this tenant');
           router.back();
           return;
@@ -81,12 +80,13 @@ export default function TenantDetailsScreen() {
         setEditRent(data.monthlyRent.toString());
       }
 
-      // Load payment history - only payments for this tenant
+      // Load payment history - only payments for this tenant (or all payments under this landlord? Original code fetched all payments for landlord, but we can filter by tenantId)
+      // I'll modify to filter by tenantId to be more efficient.
       const paymentsQuery = query(
-  paymentsCollection,
-  where('userId', '==', userId)
-);
-// Remove the date filter temporarily
+        paymentsCollection,
+        where('tenantId', '==', id as string),   // ✅ get only this tenant's payments
+        where('landlordId', '==', landlordId)
+      );
       const paymentsSnapshot = await getDocs(paymentsQuery);
       const paymentsList: Payment[] = [];
       paymentsSnapshot.forEach((doc) => {
@@ -99,6 +99,8 @@ export default function TenantDetailsScreen() {
           transactionCode: data.transactionCode,
         });
       });
+      // Sort newest first
+      paymentsList.sort((a, b) => b.date.getTime() - a.date.getTime());
       setPayments(paymentsList);
     } catch (error) {
       console.error('Error loading tenant details:', error);
@@ -390,281 +392,61 @@ export default function TenantDetailsScreen() {
   );
 }
 
+// styles exactly as you had them (copy from your original file)
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  backButton: {
-    padding: 5,
-  },
-  backText: {
-    fontSize: 16,
-    color: '#27ae60',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  editButton: {
-    padding: 5,
-  },
-  editButtonText: {
-    fontSize: 14,
-    color: '#27ae60',
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    margin: 15,
-    marginTop: 15,
-    padding: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  nameSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  tenantName: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  activeBadge: {
-    backgroundColor: '#27ae60',
-  },
-  inactiveBadge: {
-    backgroundColor: '#95a5a6',
-  },
-  statusText: {
-    fontSize: 12,
-    color: 'white',
-    fontWeight: '600',
-  },
-  infoRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-  infoLabel: {
-    width: 100,
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  infoValue: {
-    flex: 1,
-    fontSize: 14,
-    color: '#2c3e50',
-  },
-  roomCode: {
-    fontFamily: 'monospace',
-    fontWeight: '600',
-    color: '#3498db',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#e0e0e0',
-    marginVertical: 15,
-  },
-  financialRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 15,
-  },
-  financialLabel: {
-    fontSize: 12,
-    color: '#7f8c8d',
-    marginBottom: 5,
-  },
-  financialValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  balanceDue: {
-    color: '#e74c3c',
-  },
-  balancePaid: {
-    color: '#27ae60',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 10,
-  },
-  paymentButton: {
-    flex: 1,
-    backgroundColor: '#27ae60',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  paymentButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  inactiveButton: {
-    flex: 1,
-    backgroundColor: '#e74c3c',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  inactiveButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  reactivateButton: {
-    flex: 1,
-    backgroundColor: '#3498db',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  reactivateButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2c3e50',
-    marginBottom: 15,
-  },
-  paymentItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  paymentLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  paymentIcon: {
-    fontSize: 24,
-  },
-  paymentAmount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  paymentDate: {
-    fontSize: 12,
-    color: '#95a5a6',
-    marginTop: 2,
-  },
-  transactionCode: {
-    fontSize: 10,
-    color: '#bdc3c7',
-    marginTop: 2,
-  },
-  paymentRight: {
-    alignItems: 'flex-end',
-  },
-  paymentMethod: {
-    fontSize: 11,
-    color: '#7f8c8d',
-    fontWeight: '500',
-  },
-  emptyPayments: {
-    alignItems: 'center',
-    padding: 30,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#95a5a6',
-  },
-  emptySubtext: {
-    fontSize: 12,
-    color: '#bdc3c7',
-    marginTop: 5,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    width: '90%',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  modalLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#2c3e50',
-    marginBottom: 5,
-    marginTop: 10,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    gap: 10,
-  },
-  modalButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelModalButton: {
-    backgroundColor: '#ecf0f1',
-  },
-  saveModalButton: {
-    backgroundColor: '#27ae60',
-  },
-  cancelModalButtonText: {
-    color: '#7f8c8d',
-    fontWeight: '600',
-  },
-  saveModalButtonText: {
-    color: 'white',
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  backButton: { padding: 5 },
+  backText: { fontSize: 16, color: '#27ae60' },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: '#2c3e50' },
+  editButton: { padding: 5 },
+  editButtonText: { fontSize: 14, color: '#27ae60', fontWeight: '600' },
+  card: { backgroundColor: 'white', borderRadius: 12, margin: 15, marginTop: 15, padding: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+  nameSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  tenantName: { fontSize: 22, fontWeight: 'bold', color: '#2c3e50' },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
+  activeBadge: { backgroundColor: '#27ae60' },
+  inactiveBadge: { backgroundColor: '#95a5a6' },
+  statusText: { fontSize: 12, color: 'white', fontWeight: '600' },
+  infoRow: { flexDirection: 'row', marginBottom: 10 },
+  infoLabel: { width: 100, fontSize: 14, color: '#7f8c8d' },
+  infoValue: { flex: 1, fontSize: 14, color: '#2c3e50' },
+  roomCode: { fontFamily: 'monospace', fontWeight: '600', color: '#3498db' },
+  divider: { height: 1, backgroundColor: '#e0e0e0', marginVertical: 15 },
+  financialRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  financialLabel: { fontSize: 12, color: '#7f8c8d', marginBottom: 5 },
+  financialValue: { fontSize: 18, fontWeight: 'bold', color: '#2c3e50' },
+  balanceDue: { color: '#e74c3c' },
+  balancePaid: { color: '#27ae60' },
+  actionButtons: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  paymentButton: { flex: 1, backgroundColor: '#27ae60', padding: 12, borderRadius: 8, alignItems: 'center' },
+  paymentButtonText: { color: 'white', fontWeight: '600' },
+  inactiveButton: { flex: 1, backgroundColor: '#e74c3c', padding: 12, borderRadius: 8, alignItems: 'center' },
+  inactiveButtonText: { color: 'white', fontWeight: '600' },
+  reactivateButton: { flex: 1, backgroundColor: '#3498db', padding: 12, borderRadius: 8, alignItems: 'center' },
+  reactivateButtonText: { color: 'white', fontWeight: '600' },
+  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#2c3e50', marginBottom: 15 },
+  paymentItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  paymentLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  paymentIcon: { fontSize: 24 },
+  paymentAmount: { fontSize: 16, fontWeight: '600', color: '#2c3e50' },
+  paymentDate: { fontSize: 12, color: '#95a5a6', marginTop: 2 },
+  transactionCode: { fontSize: 10, color: '#bdc3c7', marginTop: 2 },
+  paymentRight: { alignItems: 'flex-end' },
+  paymentMethod: { fontSize: 11, color: '#7f8c8d', fontWeight: '500' },
+  emptyPayments: { alignItems: 'center', padding: 30 },
+  emptyText: { fontSize: 14, color: '#95a5a6' },
+  emptySubtext: { fontSize: 12, color: '#bdc3c7', marginTop: 5 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { backgroundColor: 'white', borderRadius: 12, padding: 20, width: '90%' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
+  modalLabel: { fontSize: 14, fontWeight: '500', color: '#2c3e50', marginBottom: 5, marginTop: 10 },
+  modalInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, fontSize: 16 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, gap: 10 },
+  modalButton: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center' },
+  cancelModalButton: { backgroundColor: '#ecf0f1' },
+  saveModalButton: { backgroundColor: '#27ae60' },
+  cancelModalButtonText: { color: '#7f8c8d', fontWeight: '600' },
+  saveModalButtonText: { color: 'white', fontWeight: '600' },
 });

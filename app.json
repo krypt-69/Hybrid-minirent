@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "MiniRent",
-    "slug": "MiniRent",
+    "owner": "krypt-404",
+    "slug": "minirent-landlord",
+    "name": "Minirent Landlord",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -48,7 +49,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "31d4a29a-84b9-4c0d-a90e-1df38bf4ff1b"
+        "projectId": "@krypt-404/minirent-landlord"
       }
     }
   }

@@ -14,13 +14,13 @@ type Complaint = {
   status: 'open' | 'resolved';
   createdAt: Date;
   resolvedAt?: Date;
-  userId: string;
+  landlordId: string;
   propertyId: string;
 };
 
 export default function ComplaintsScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { landlordId } = useAuth();   // ✅ use landlordId
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -29,20 +29,20 @@ export default function ComplaintsScreen() {
   const [replyText, setReplyText] = useState('');
 
   useEffect(() => {
-    if (user) {
+    if (landlordId) {
       loadComplaints();
     }
-  }, [user]);
+  }, [landlordId]);
 
   const loadComplaints = async () => {
-    if (!user) return;
+    if (!landlordId) return;
     
     try {
-      // Load complaints for this landlord's properties
+      // Load complaints for this landlord
       const q = query(
-  complaintsCollection,
-  where('userId', '==', user.uid)
-);
+        complaintsCollection,
+        where('landlordId', '==', landlordId)
+      );
       const querySnapshot = await getDocs(q);
       const complaintsList: Complaint[] = [];
       querySnapshot.forEach((doc) => {
@@ -56,10 +56,12 @@ export default function ComplaintsScreen() {
           status: data.status,
           createdAt: data.createdAt?.toDate() || new Date(),
           resolvedAt: data.resolvedAt?.toDate(),
-          userId: data.userId,
+          landlordId: data.landlordId,
           propertyId: data.propertyId,
         });
       });
+      // Sort newest first
+      complaintsList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       setComplaints(complaintsList);
     } catch (error) {
       console.error('Error loading complaints:', error);
@@ -71,10 +73,10 @@ export default function ComplaintsScreen() {
   };
 
   const onRefresh = useCallback(() => {
-    if (!user) return;
+    if (!landlordId) return;
     setRefreshing(true);
     loadComplaints();
-  }, [user]);
+  }, [landlordId]);
 
   const handleResolveComplaint = async (complaint: Complaint) => {
     Alert.alert(
@@ -90,6 +92,7 @@ export default function ComplaintsScreen() {
               await updateDoc(complaintRef, {
                 status: 'resolved',
                 resolvedAt: Timestamp.now(),
+                resolvedBy: 'landlord',
               });
               loadComplaints();
               Alert.alert('Success', 'Complaint marked as resolved');
@@ -229,7 +232,7 @@ export default function ComplaintsScreen() {
         />
       )}
 
-      {/* Complaint Detail Modal */}
+      {/* Complaint Detail Modal (same as before) */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -302,6 +305,10 @@ export default function ComplaintsScreen() {
     </View>
   );
 }
+
+// Styles are the same as your original file – please keep your existing styles.
+// If you need them, copy from your original complaints.tsx.
+
 
 const styles = StyleSheet.create({
   container: {
