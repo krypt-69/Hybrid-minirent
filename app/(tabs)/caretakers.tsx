@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, RefreshControl } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { auth, db } from '../../lib/firebase';
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 
 type Caretaker = {
@@ -20,11 +20,12 @@ type Property = {
 };
 
 export default function CaretakersScreen() {
-  const router = useRouter();  
+  const router = useRouter();
   const { landlordId } = useAuth();
   const [caretakers, setCaretakers] = useState<Caretaker[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -36,9 +37,9 @@ export default function CaretakersScreen() {
     if (landlordId) loadData();
   }, [landlordId]);
 
-  const loadData = async () => {
+  const loadData = async (showLoading = true) => {
     if (!landlordId) return;
-    setIsLoading(true);
+    if (showLoading) setIsLoading(true);
     try {
       // Load properties
       const propsSnap = await getDocs(query(collection(db, 'properties'), where('landlordId', '==', landlordId)));
@@ -64,25 +65,30 @@ export default function CaretakersScreen() {
       Alert.alert('Error', 'Failed to load data');
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadData(false);
+  }, [landlordId]);
+
   const handleAddCaretaker = async () => {
-  if (!newEmail.trim() || !newPassword.trim() || !selectedPropertyId || !landlordPassword.trim()) {
-    Alert.alert('Error', 'Please fill all fields including your landlord password');
-    return;
-  }
+    if (!newEmail.trim() || !newPassword.trim() || !selectedPropertyId || !landlordPassword.trim()) {
+      Alert.alert('Error', 'Please fill all fields including your landlord password');
+      return;
+    }
 
-  setIsSubmitting(true);
+    setIsSubmitting(true);
 
-  try {
-    const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error('No landlord logged in');
-    const landlordEmail = currentUser.email;
-    if (!landlordEmail) throw new Error('Landlord email not found');
-
-    // Optional: check if caretaker email already exists in your Firestore list
     try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error('No landlord logged in');
+      const landlordEmail = currentUser.email;
+      if (!landlordEmail) throw new Error('Landlord email not found');
+
+      // Check if caretaker email already exists in your Firestore list
       const existingCaretaker = await getDocs(
         query(collection(db, 'caretakers'), where('email', '==', newEmail.trim()), where('landlordId', '==', landlordId))
       );
@@ -90,61 +96,61 @@ export default function CaretakersScreen() {
         Alert.alert('Error', 'A caretaker with this email already exists in your list.');
         return;
       }
-    } catch (err) {
-      // ignore Firestore check error
-    }
 
-    // STEP 1: Create caretaker user (this will sign out the landlord)
-    let caretakerUid = null;
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, newEmail.trim(), newPassword.trim());
-      caretakerUid = userCredential.user.uid;
-    } catch (error: any) {
-      if (error.code === 'auth/email-already-in-use') {
-        Alert.alert('Error', `Email ${newEmail} is already registered. Please use a different email.`);
-      } else {
-        throw error;
+      // STEP 1: Create caretaker user (this will sign out the landlord)
+      let caretakerUid = null;
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, newEmail.trim(), newPassword.trim());
+        caretakerUid = userCredential.user.uid;
+      } catch (error: any) {
+        if (error.code === 'auth/email-already-in-use') {
+          Alert.alert('Error', `Email ${newEmail} is already registered. Please use a different email.`);
+        } else {
+          throw error;
+        }
+        return;
       }
-      return;
-    }
 
-    // STEP 2: Immediately log landlord back in
-    await signInWithEmailAndPassword(auth, landlordEmail, landlordPassword);
-    
-    // ✅ STEP 3: Update the selected property with caretakerId
-    const propertyRef = doc(db, 'properties', selectedPropertyId);
-    await updateDoc(propertyRef, { caretakerId: caretakerUid });
+      // STEP 2: Immediately log landlord back in
+      await signInWithEmailAndPassword(auth, landlordEmail, landlordPassword);
 
-    // STEP 4: Save caretaker record to Firestore (optional audit)
-    await addDoc(collection(db, 'caretakers'), {
-      email: newEmail.trim(),
-      propertyId: selectedPropertyId,
-      landlordId: landlordId,
-      createdAt: new Date().toISOString(),
-      firebaseUid: caretakerUid,
-    });
-    
-    Alert.alert('Success', 'Caretaker account created and assigned');
-    setModalVisible(false);
-    setNewEmail('');
-    setNewPassword('');
-    setSelectedPropertyId('');
-    setLandlordPassword('');
-    loadData();
-  } catch (error: any) {
-    console.error(error);
-    if (error.code === 'auth/wrong-password') {
-      Alert.alert('Error', 'Your landlord password is incorrect.');
-    } else if (error.message.includes('permission')) {
-      Alert.alert('Warning', 'Caretaker was created but we had a small permission issue. Please check if the caretaker appears in the list.');
-      await loadData(); // reload the list anyway
-    } else {
-      Alert.alert('Error', error.message || 'Failed to create caretaker');
+      // STEP 3: Update the selected property with caretakerId
+      const propertyRef = doc(db, 'properties', selectedPropertyId);
+      await updateDoc(propertyRef, { caretakerId: caretakerUid });
+
+      // STEP 4: Save caretaker record to Firestore
+      await addDoc(collection(db, 'caretakers'), {
+        email: newEmail.trim(),
+        propertyId: selectedPropertyId,
+        landlordId: landlordId,
+        createdAt: new Date().toISOString(),
+        firebaseUid: caretakerUid,
+      });
+
+      // Small delay to ensure Firestore consistency
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      Alert.alert('Success', 'Caretaker account created and assigned');
+      setModalVisible(false);
+      setNewEmail('');
+      setNewPassword('');
+      setSelectedPropertyId('');
+      setLandlordPassword('');
+      await loadData(false); // refresh the list
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'auth/wrong-password') {
+        Alert.alert('Error', 'Your landlord password is incorrect.');
+      } else if (error.message.includes('permission')) {
+        Alert.alert('Warning', 'Caretaker was created but there was a permission issue. Please check if the caretaker appears in the list.');
+        await loadData(false);
+      } else {
+        Alert.alert('Error', error.message || 'Failed to create caretaker');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+  };
 
   const handleDeleteCaretaker = async (id: string, email: string) => {
     Alert.alert(
@@ -157,18 +163,9 @@ export default function CaretakersScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // First, get the caretaker document to retrieve firebaseUid
-              const caretakerDoc = await getDocs(query(collection(db, 'caretakers'), where('email', '==', email), where('landlordId', '==', landlordId)));
-              if (!caretakerDoc.empty) {
-                const firebaseUid = caretakerDoc.docs[0].data().firebaseUid;
-                // Delete from Firebase Auth (requires admin SDK – client can't do this directly)
-                // So we cannot delete the Auth user from client side. We can only remove the Firestore record.
-                // For now, just delete Firestore record. Caretaker will still be able to log in but won't have access.
-                // To fully delete, we need a Cloud Function. But we skip that for now.
-              }
               await deleteDoc(doc(db, 'caretakers', id));
-              loadData();
-              Alert.alert('Success', 'Caretaker removed from your list. (Auth user remains – to fully delete, use Firebase Console or a Cloud Function)');
+              Alert.alert('Success', 'Caretaker removed from your list. (Firebase Auth user remains – use Firebase Console to delete if needed)');
+              await loadData(false);
             } catch (error: any) {
               Alert.alert('Error', error.message);
             }
@@ -179,24 +176,18 @@ export default function CaretakersScreen() {
   };
 
   const renderCaretaker = ({ item }: { item: Caretaker }) => (
-  <TouchableOpacity 
-    onPress={() => router.push(`/caretaker-details?id=${item.id}`)} 
-    activeOpacity={0.7}
-  >
-    <View style={styles.card}>
-      <View style={styles.cardInfo}>
-        <Text style={styles.email}>{item.email}</Text>
-        <Text style={styles.property}>Property: {item.propertyName}</Text>
+    <TouchableOpacity onPress={() => router.push(`/caretaker-details?id=${item.id}`)} activeOpacity={0.7}>
+      <View style={styles.card}>
+        <View style={styles.cardInfo}>
+          <Text style={styles.email}>{item.email}</Text>
+          <Text style={styles.property}>Property: {item.propertyName}</Text>
+        </View>
+        <TouchableOpacity onPress={() => handleDeleteCaretaker(item.id, item.email)} style={styles.deleteButton}>
+          <Text style={styles.deleteButtonText}>Delete</Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity 
-        onPress={() => handleDeleteCaretaker(item.id, item.email)} 
-        style={styles.deleteButton}
-      >
-        <Text style={styles.deleteButtonText}>Delete</Text>
-      </TouchableOpacity>
-    </View>
-  </TouchableOpacity>
-);
+    </TouchableOpacity>
+  );
 
   return (
     <View style={styles.container}>
@@ -220,8 +211,7 @@ export default function CaretakersScreen() {
           renderItem={renderCaretaker}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
-          refreshing={isLoading}
-          onRefresh={loadData}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         />
       )}
 

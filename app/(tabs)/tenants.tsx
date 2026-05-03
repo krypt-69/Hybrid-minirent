@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, Modal, RefreshControl } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { db, tenantsCollection, propertiesCollection } from '../../lib/firebase';
@@ -31,7 +31,9 @@ export default function TenantsScreen() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // ✅ Added for refresh control
   const [modalVisible, setModalVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // ✅ Added for double-click prevention
   const [selectedProperty, setSelectedProperty] = useState<string>('');
   const [tenantName, setTenantName] = useState('');
   const [tenantPhone, setTenantPhone] = useState('');
@@ -47,6 +49,7 @@ export default function TenantsScreen() {
 
   const loadData = async () => {
     if (!landlordId) return;
+    setIsLoading(true);
     try {
       // Load only landlord's properties
       const propertiesQuery = query(propertiesCollection, where('landlordId', '==', landlordId));
@@ -76,28 +79,37 @@ export default function TenantsScreen() {
       Alert.alert('Error', 'Failed to load data');
     } finally {
       setIsLoading(false);
+      setRefreshing(false); // ✅ Stop refreshing
     }
   };
 
   const handleAddTenant = async () => {
+    if (isSubmitting) return; // ✅ Prevent double-click
+    setIsSubmitting(true); // ✅ Set submitting state
+    
     if (!selectedProperty) {
       Alert.alert('Error', 'Please select a property');
+      setIsSubmitting(false);
       return;
     }
     if (!tenantName.trim()) {
       Alert.alert('Error', 'Please enter tenant name');
+      setIsSubmitting(false);
       return;
     }
     if (!tenantPhone.trim()) {
       Alert.alert('Error', 'Please enter phone number');
+      setIsSubmitting(false);
       return;
     }
     if (!tenantRoom.trim()) {
       Alert.alert('Error', 'Please enter room number');
+      setIsSubmitting(false);
       return;
     }
     if (!monthlyRent || parseFloat(monthlyRent) <= 0) {
       Alert.alert('Error', 'Please enter valid monthly rent');
+      setIsSubmitting(false);
       return;
     }
 
@@ -125,6 +137,8 @@ export default function TenantsScreen() {
     } catch (error) {
       console.error('Error adding tenant:', error);
       Alert.alert('Error', 'Failed to add tenant');
+    } finally {
+      setIsSubmitting(false); // ✅ Reset submitting state
     }
   };
 
@@ -225,7 +239,7 @@ export default function TenantsScreen() {
         </TouchableOpacity>
       </View>
 
-      {isLoading ? (
+      {isLoading && !refreshing ? (
         <Text style={styles.loading}>Loading...</Text>
       ) : tenants.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -238,8 +252,15 @@ export default function TenantsScreen() {
           renderItem={renderTenant}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          onRefresh={loadData}
-          refreshing={isLoading}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={() => { 
+                setRefreshing(true); 
+                loadData(); 
+              }} 
+            />
+          }
         />
       )}
 
@@ -303,10 +324,13 @@ export default function TenantsScreen() {
                 <Text style={styles.cancelModalButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={[styles.modalButton, styles.saveModalButton]} 
+                style={[styles.saveModalButton, isSubmitting && styles.disabledButton]} 
                 onPress={handleAddTenant}
+                disabled={isSubmitting}
               >
-                <Text style={styles.saveModalButtonText}>Add Tenant</Text>
+                <Text style={styles.saveModalButtonText}>
+                  {isSubmitting ? 'Adding...' : 'Add Tenant'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -357,4 +381,5 @@ const styles = StyleSheet.create({
   propertyOptionText: { fontSize: 16 },
   cancelButton: { padding: 15, alignItems: 'center', marginTop: 10 },
   cancelButtonText: { color: '#e74c3c', fontWeight: '600' },
+  disabledButton: { opacity: 0.6 }, // ✅ Added for disabled button style
 });

@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, RefreshControl } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { db, tenantsCollection } from '../lib/firebase';
@@ -12,14 +12,15 @@ type Tenant = {
   monthlyRent: number;
   balance: number;
   status: string;
-  landlordId: string;   // ✅ changed from userId
+  landlordId: string;
 };
 
 export default function AutoRentScreen() {
   const router = useRouter();
-  const { landlordId } = useAuth();   // ✅ use landlordId
+  const { landlordId } = useAuth();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastRentDate, setLastRentDate] = useState<string | null>(null);
 
@@ -27,8 +28,9 @@ export default function AutoRentScreen() {
     if (landlordId) loadData();
   }, [landlordId]);
 
-  const loadData = async () => {
+  const loadData = async (showLoading = true) => {
     if (!landlordId) return;
+    if (showLoading) setIsLoading(true);
     try {
       const q = query(tenantsCollection, where('landlordId', '==', landlordId));
       const tenantsSnapshot = await getDocs(q);
@@ -53,10 +55,17 @@ export default function AutoRentScreen() {
       Alert.alert('Error', 'Failed to load tenants: ' + error.message);
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadData(false);
+  }, [landlordId]);
+
   const generateRent = async () => {
+    if (isProcessing) return;
     const activeTenants = tenants.filter(t => t.status === 'active');
     if (activeTenants.length === 0) {
       Alert.alert('No Active Tenants', 'There are no active tenants to generate rent for.');
@@ -91,6 +100,7 @@ export default function AutoRentScreen() {
             lastRentGenerated: Timestamp.now(),
             lastRentMonth: currentMonth,
           });
+          // Write to rentGenerations collection – ensure this collection exists in Firestore
           await addDoc(collection(db, 'rentGenerations'), {
             tenantId: tenant.id,
             tenantName: tenant.name,
@@ -101,18 +111,22 @@ export default function AutoRentScreen() {
             type: 'auto',
             previousBalance: tenant.balance,
             newBalance: newBalance,
-            landlordId: landlordId,   // ✅ add landlordId
+            landlordId: landlordId,
           });
           successCount++;
         } catch (error: any) {
           errorCount++;
           errors.push(`${tenant.name}: ${error.message}`);
+          console.error(`Failed for ${tenant.name}:`, error);
         }
       }
       let message = `✅ Success: ${successCount} tenants\n❌ Failed: ${errorCount} tenants\n\nMonth: ${currentMonth}`;
       if (errors.length > 0 && errors.length <= 3) message += `\n\nErrors:\n${errors.join('\n')}`;
-      Alert.alert('Rent Generation Complete', message, [{ text: 'OK', onPress: () => { loadData(); router.back(); } }]);
+      Alert.alert('Rent Generation Complete', message, [
+        { text: 'OK', onPress: () => { loadData(false); router.back(); } }
+      ]);
     } catch (error: any) {
+      console.error('Rent generation error:', error);
       Alert.alert('Error', 'Failed to generate rent: ' + error.message);
     } finally {
       setIsProcessing(false);
@@ -124,7 +138,7 @@ export default function AutoRentScreen() {
   const getTotalArrears = () => tenants.reduce((sum, t) => sum + ((t.balance || 0) > 0 ? (t.balance || 0) : 0), 0);
   const activeTenants = tenants.filter(t => t.status === 'active');
 
-  if (isLoading) {
+  if (isLoading && !refreshing) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#27ae60" />
@@ -134,7 +148,10 @@ export default function AutoRentScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Text style={styles.backText}>← Back</Text>
@@ -205,7 +222,6 @@ export default function AutoRentScreen() {
   );
 }
 
-// styles unchanged – keep your existing styles exactly as they were
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
