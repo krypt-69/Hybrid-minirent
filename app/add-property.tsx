@@ -59,30 +59,33 @@ export default function AddPropertyScreen() {
 
       <View style={styles.form}>
         <Text style={styles.label}>Property Name *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g., Sunrise Hostel"
-          value={name}
-          onChangeText={setName}
-        />
+<TextInput
+  style={styles.input}
+  placeholder="e.g., Sunrise Hostel"
+  placeholderTextColor="#f39c12"  // Yellow-Orange
+  value={name}
+  onChangeText={setName}
+/>
 
-        <Text style={styles.label}>Property Code *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g., SR"
-          value={code}
-          onChangeText={setCode}
-          autoCapitalize="characters"
-        />
-        <Text style={styles.hint}>Used to create unique room codes (e.g., SR-A4)</Text>
+<Text style={styles.label}>Property Code *</Text>
+<TextInput
+  style={styles.input}
+  placeholder="e.g., SR"
+  placeholderTextColor="#3498db"  // Bright Blue
+  value={code}
+  onChangeText={setCode}
+  autoCapitalize="characters"
+/>
+<Text style={styles.hint}>Used to create unique room codes (e.g., SR-A4)</Text>
 
-        <Text style={styles.label}>Location (Optional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g., Ngong Road, Nairobi"
-          value={location}
-          onChangeText={setLocation}
-        />
+<Text style={styles.label}>Location (Optional)</Text>
+<TextInput
+  style={styles.input}
+  placeholder="e.g., Ngong Road, Nairobi"
+  placeholderTextColor="#2ecc71"  // Bright Green
+  value={location}
+  onChangeText={setLocation}
+/>
 
         <TouchableOpacity 
           style={[styles.saveButton, isLoading && styles.disabledButton]} 

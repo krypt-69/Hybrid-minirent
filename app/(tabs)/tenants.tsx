@@ -286,33 +286,36 @@ export default function TenantsScreen() {
             </TouchableOpacity>
 
             <TextInput
-              style={styles.input}
-              placeholder="Tenant Name *"
-              value={tenantName}
-              onChangeText={setTenantName}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Phone Number *"
-              value={tenantPhone}
-              onChangeText={setTenantPhone}
-              keyboardType="phone-pad"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Room Number * (e.g., A4)"
-              value={tenantRoom}
-              onChangeText={setTenantRoom}
-              autoCapitalize="characters"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Monthly Rent * (KES)"
-              value={monthlyRent}
-              onChangeText={setMonthlyRent}
-              keyboardType="numeric"
-            />
-
+  style={styles.input}
+  placeholder="Tenant Name *"
+  placeholderTextColor="#ff6b35"  // Vibrant Orange
+  value={tenantName}
+  onChangeText={setTenantName}
+/>
+<TextInput
+  style={styles.input}
+  placeholder="Phone Number *"
+  placeholderTextColor="#ff6b35"  // Vibrant Orange
+  value={tenantPhone}
+  onChangeText={setTenantPhone}
+  keyboardType="phone-pad"
+/>
+<TextInput
+  style={styles.input}
+  placeholder="Room Number * (e.g., A4)"
+  placeholderTextColor="#ff6b35"  // Vibrant Orange
+  value={tenantRoom}
+  onChangeText={setTenantRoom}
+  autoCapitalize="characters"
+/>
+<TextInput
+  style={styles.input}
+  placeholder="Monthly Rent * (KES)"
+  placeholderTextColor="#ff6b35"  // Vibrant Orange
+  value={monthlyRent}
+  onChangeText={setMonthlyRent}
+  keyboardType="numeric"
+/>
             <View style={styles.modalButtons}>
               <TouchableOpacity 
                 style={[styles.modalButton, styles.cancelModalButton]} 

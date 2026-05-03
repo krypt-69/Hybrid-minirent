@@ -64,34 +64,37 @@ export default function RegisterScreen() {
 
       <View style={styles.card}>
         <TextInput
-          style={styles.input}
-          placeholder="Full Name"
-          value={name}
-          onChangeText={setName}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password (min 6 characters)"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Confirm Password"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-        />
-        
+  style={styles.input}
+  placeholder="Full Name"
+  placeholderTextColor="#f39c12"  // Yellow-Orange
+  value={name}
+  onChangeText={setName}
+/>
+<TextInput
+  style={styles.input}
+  placeholder="Email"
+  placeholderTextColor="#3498db"  // Bright Blue
+  value={email}
+  onChangeText={setEmail}
+  autoCapitalize="none"
+  keyboardType="email-address"
+/>
+<TextInput
+  style={styles.input}
+  placeholder="Password (min 6 characters)"
+  placeholderTextColor="#e74c3c"  // Bright Red
+  value={password}
+  onChangeText={setPassword}
+  secureTextEntry
+/>
+<TextInput
+  style={styles.input}
+  placeholder="Confirm Password"
+  placeholderTextColor="#e74c3c"  // Bright Red
+  value={confirmPassword}
+  onChangeText={setConfirmPassword}
+  secureTextEntry
+/>
         <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={isLoading}>
           {isLoading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Create Account</Text>}
         </TouchableOpacity>
