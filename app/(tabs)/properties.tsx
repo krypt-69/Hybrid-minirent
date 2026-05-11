@@ -10,12 +10,12 @@ type Property = {
   name: string;
   code: string;
   location?: string;
-  landlordId: string;      // changed from userId
+  landlordId: string;
 };
 
 export default function PropertiesScreen() {
   const router = useRouter();
-  const { landlordId } = useAuth();   // ✅ use landlordId instead of userId
+  const { landlordId } = useAuth();
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -93,9 +93,14 @@ export default function PropertiesScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Properties</Text>
-        <TouchableOpacity style={styles.addButton} onPress={handleAddProperty}>
-          <Text style={styles.addButtonText}>+ Add</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={styles.refreshButton} onPress={loadProperties}>
+            <Text style={styles.refreshButtonText}>🔄</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addButton} onPress={handleAddProperty}>
+            <Text style={styles.addButtonText}>+ Add</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {isLoading ? (
@@ -119,11 +124,14 @@ export default function PropertiesScreen() {
   );
 }
 
-// (styles remain exactly as you had them – copy from your original file)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
   title: { fontSize: 24, fontWeight: 'bold', color: '#2c3e50' },
+  // New style for the button group
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  refreshButton: { padding: 8 },
+  refreshButtonText: { fontSize: 22, color: '#3498db' },
   addButton: { backgroundColor: '#27ae60', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
   addButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
   list: { padding: 15 },

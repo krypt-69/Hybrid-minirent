@@ -39,7 +39,7 @@ type RoomCandidate = {
 
 export default function PaymentsScreen() {
   const router = useRouter();
-  const { landlordId } = useAuth();   // ✅ use landlordId
+  const { landlordId } = useAuth();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [filteredTenants, setFilteredTenants] = useState<Tenant[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,21 +122,37 @@ export default function PaymentsScreen() {
     }
   };
 
-  // --- M-Pesa extraction and matching (same as original, but will store landlordId) ---
+  // --- UPDATED M-Pesa extraction (now supports "for ROOMCODE" messages) ---
   const extractReliableFields = (text: string): ExtractedData => {
-    const codeMatch = text.match(/^([A-Z0-9]{10,12})\s/);
+    // 1. Transaction Code (10-12 uppercase alphanumeric, often at the start)
+    const codeMatch = text.match(/\b([A-Z0-9]{10,12})\b/);
+    
+    // 2. Amount (Ksh/KES)
     const amountMatch = text.match(/(?:Ksh|KES)\s?([\d,]+(?:\.\d{2})?)/i);
-    const dateMatch = text.match(/\s(\d{1,2}\/\d{1,2}\/\d{2,4})\s/);
-    const timeMatch = text.match(/(\d{1,2}:\d{2}\s(?:AM|PM))/i);
     
-    let accountMatch = text.match(/account\s([A-Z0-9#]+)/i);
-    let fullAccountString = accountMatch ? accountMatch[1] : null;
-    
-    if (!fullAccountString) {
-      const refMatch = text.match(/for\s([A-Z0-9#]+)/i);
-      fullAccountString = refMatch ? refMatch[1] : null;
+    // 3. Account / Room Reference – try all known patterns
+    let fullAccountString = null;
+
+    const standardMatch = text.match(/account\s+([A-Z0-9\-_#\/]+)/i);
+    const refMatch = text.match(/Ref:?\s+([A-Z0-9\-_#\/]+)/i);
+    const ncbaStyleMatch = text.match(/224619\s+([A-Z0-9\-_#\/]+)/i);
+    // NEW: captures room code after "for" (e.g., "sent to LORA PLACE for ASSD-FF-12")
+    const forMatch = text.match(/for\s+([A-Z0-9\-_#\/]+)/i);
+
+    if (standardMatch) {
+      fullAccountString = standardMatch[1];
+    } else if (refMatch) {
+      fullAccountString = refMatch[1];
+    } else if (ncbaStyleMatch) {
+      fullAccountString = ncbaStyleMatch[1];
+    } else if (forMatch) {
+      fullAccountString = forMatch[1];
     }
-    
+
+    // 4. Date and Time
+    const dateMatch = text.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+    const timeMatch = text.match(/(\d{1,2}:\d{2}\s?(?:AM|PM|am|pm)?)/i);
+
     return {
       transactionCode: codeMatch ? codeMatch[1] : null,
       amount: amountMatch ? amountMatch[1].replace(/,/g, '') : null,
@@ -150,20 +166,30 @@ export default function PaymentsScreen() {
   const generateRoomCandidates = (accountString: string | null): RoomCandidate[] => {
     if (!accountString) return [];
     const candidates: RoomCandidate[] = [];
-    const last2Digits = accountString.match(/(\d{2})$/);
-    if (last2Digits) {
-      candidates.push({ value: last2Digits[1], description: `Last 2 digits: ${last2Digits[1]}` });
-    }
-    const last3 = accountString.slice(-3);
-    if (last3 && last3 !== last2Digits?.[1]) {
-      candidates.push({ value: last3, description: `Last 3 characters: ${last3}` });
-    }
-    const allDigits = accountString.match(/\d+/g);
-    if (allDigits && allDigits[0] !== last2Digits?.[1]) {
-      candidates.push({ value: allDigits[0], description: `Full number: ${allDigits[0]}` });
-    }
+
+    // 1. Full original string
     candidates.push({ value: accountString, description: `Full reference: ${accountString}` });
-    return candidates.filter((c, i, self) => self.findIndex(t => t.value === c.value) === i);
+
+    // 2. Split by hyphens, slashes, spaces
+    const parts = accountString.split(/[\s\-\/]+/);
+    if (parts.length > 1) {
+      parts.forEach(part => {
+        if (part.length > 0) {
+          candidates.push({ value: part, description: `Part of code: ${part}` });
+        }
+      });
+    }
+
+    // 3. Trailing digits
+    const trailingDigits = accountString.match(/(\d+)$/);
+    if (trailingDigits) {
+      candidates.push({ value: trailingDigits[1], description: `Room Number: ${trailingDigits[1]}` });
+    }
+
+    // Unique results only
+    return candidates.filter((c, i, self) => 
+      self.findIndex(t => t.value.toLowerCase() === c.value.toLowerCase()) === i
+    );
   };
 
   const findTenantsByRoomIdentifier = (roomValue: string): Tenant[] => {
@@ -199,8 +225,10 @@ export default function PaymentsScreen() {
   const handleSelectRoomCandidate = (candidate: RoomCandidate) => {
     setSelectedRoomValue(candidate.value);
     setShowCandidatesModal(false);
+    
     const matched = findTenantsByRoomIdentifier(candidate.value);
     setMatchedTenants(matched);
+
     if (matched.length === 0) {
       Alert.alert(
         'No Tenant Found',
@@ -211,19 +239,18 @@ export default function PaymentsScreen() {
         ]
       );
     } else if (matched.length === 1) {
-      setSelectedTenant(matched[0]);
-      showConfirmationDialog(matched[0]);
+      const tenant = matched[0];
+      setSelectedTenant(tenant);
+      if (extractedData?.amount) {
+        setAmount(extractedData.amount);
+      }
+      showConfirmationDialog(tenant);
     } else {
       setShowPropertySelector(true);
     }
   };
 
-  const handleSelectProperty = (tenant: Tenant) => {
-    setSelectedTenant(tenant);
-    setShowPropertySelector(false);
-    showConfirmationDialog(tenant);
-  };
-
+  // Single showConfirmationDialog – uses amount state and mpesaCode
   const showConfirmationDialog = (tenant: Tenant) => {
     const paymentAmount = parseFloat(amount);
     setPaymentToConfirm({
@@ -233,6 +260,19 @@ export default function PaymentsScreen() {
       newBalance: tenant.balance - paymentAmount,
     });
     setConfirmationVisible(true);
+  };
+
+  const resetMpesaFlow = () => {
+    setMpesaText('');
+    setExtractedData(null);
+    setMpesaCode('');
+    setSelectedTenant(null);
+  };
+
+  const handleSelectProperty = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setShowPropertySelector(false);
+    showConfirmationDialog(tenant);
   };
 
   const saveConfirmedPayment = async () => {
@@ -250,8 +290,8 @@ export default function PaymentsScreen() {
         source: 'mpesa',
         transactionCode: transactionCode || null,
         originalText: mpesaText,
-        landlordId: landlordId,           // ✅ add landlordId
-        propertyId: tenant.propertyId,    // ✅ add propertyId for later filtering
+        landlordId: landlordId,
+        propertyId: tenant.propertyId,
         recordedBy: 'landlord',
       });
       
@@ -283,8 +323,7 @@ export default function PaymentsScreen() {
         extractedRoom: selectedRoomValue,
         date: Timestamp.now(),
         status: 'pending',
-        landlordId: landlordId,           // ✅ add landlordId
-        // propertyId can be added later if we know it, but for now we leave optional
+        landlordId: landlordId,
       });
       Alert.alert('Unmatched Payment Saved', `Payment saved. You can match it later in Unmatched Payments.`);
       resetMpesaFlow();
@@ -306,18 +345,17 @@ export default function PaymentsScreen() {
     );
   };
 
-  const resetMpesaFlow = () => {
-    setMpesaText('');
-    setMpesaCode('');
+  const resetForm = () => {
+    setSelectedTenant(null);
     setAmount('');
+    setPaymentMethod('manual');
+    setMpesaCode('');
+    setMpesaText('');
+    setSearchQuery('');
     setExtractedData(null);
     setSelectedRoomValue(null);
     setMatchedTenants([]);
-    setSelectedTenant(null);
     setPaymentToConfirm(null);
-    setShowCandidatesModal(false);
-    setShowPropertySelector(false);
-    setConfirmationVisible(false);
   };
 
   const cancelManualSelection = () => {
@@ -354,7 +392,7 @@ export default function PaymentsScreen() {
         amount: paymentAmount,
         date: Timestamp.now(),
         source: 'manual',
-        landlordId: landlordId,           // ✅ add landlordId
+        landlordId: landlordId,
         propertyId: selectedTenant.propertyId,
         recordedBy: 'landlord',
       });
@@ -381,19 +419,6 @@ export default function PaymentsScreen() {
     setSearchQuery('');
   };
 
-  const resetForm = () => {
-    setSelectedTenant(null);
-    setAmount('');
-    setPaymentMethod('manual');
-    setMpesaCode('');
-    setMpesaText('');
-    setSearchQuery('');
-    setExtractedData(null);
-    setSelectedRoomValue(null);
-    setMatchedTenants([]);
-    setPaymentToConfirm(null);
-  };
-
   const renderTenantItem = ({ item }: { item: Tenant }) => (
     <TouchableOpacity 
       style={styles.tenantItem}
@@ -417,7 +442,10 @@ export default function PaymentsScreen() {
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Record Payment</Text>
-        <View style={{ width: 40 }} />
+        {/* Refresh Button */}
+        <TouchableOpacity onPress={loadData} style={styles.refreshButton}>
+          <Text style={styles.refreshText}>🔄</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Payment Method Tabs */}
@@ -721,6 +749,8 @@ const styles = StyleSheet.create({
   backButton: { padding: 5 },
   backText: { fontSize: 16, color: '#27ae60', fontWeight: '500' },
   title: { fontSize: 20, fontWeight: 'bold', color: '#2c3e50' },
+  refreshButton: { padding: 5 },
+  refreshText: { fontSize: 22, color: '#3498db' },
   card: { 
     backgroundColor: 'white', 
     borderRadius: 16, 
